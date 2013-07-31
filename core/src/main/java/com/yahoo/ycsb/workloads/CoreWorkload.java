@@ -18,6 +18,7 @@
 package com.yahoo.ycsb.workloads;
 
 import java.util.Properties;
+
 import com.yahoo.ycsb.*;
 import com.yahoo.ycsb.generator.CounterGenerator;
 import com.yahoo.ycsb.generator.DiscreteGenerator;
@@ -37,6 +38,10 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Vector;
+import java.util.Random;
+import java.util.ArrayList;
+
+
 
 /**
  * The core benchmark scenario. Represents a set of clients doing simple CRUD operations. The relative 
@@ -147,6 +152,26 @@ public class CoreWorkload extends Workload
 
 	boolean writeallfields;
 
+	/**
+	 * The name of the property for the organization count if organization id needs to be included in the row key.
+	 */
+	public static final String ORGANIZATION_COUNT_PROPERTY="orgCount";
+
+	/**
+	 * The default organization count if organization id needs to be included in the row key	
+	 */
+	public static final String ORGANIZATION_COUNT_DEFAULT="1000";
+
+	/**
+	 * The name of the property for the organization count if organization id needs to be included in the row key.
+	 */
+	public static final String INCLUDE_ORGID_PROPERTY="includeOrgId";
+
+	/**
+	 * The default organization count if organization id needs to be included in the row key	
+	 */
+	public static final String INCLUDE_ORGID_DEFAULT="false";
+
 
 	/**
 	 * The name of the property for the proportion of transactions that are reads.
@@ -197,6 +222,17 @@ public class CoreWorkload extends Workload
 	 * The default proportion of transactions that are scans.
 	 */
 	public static final String READMODIFYWRITE_PROPORTION_PROPERTY_DEFAULT="0.0";
+	
+	/**
+	 * The name of the property for the proportion of transactions that are deletes.
+	 */
+	public static final String DELETE_PROPORTION_PROPERTY="deleteproportion";
+	
+	/**
+	 * The default proportion of transactions that are deletes.
+	 */
+	public static final String DELETE_PROPORTION_PROPERTY_DEFAULT="0.0";
+
 	
 	/**
 	 * The name of the property for the the distribution of requests across the keyspace. Options are "uniform", "zipfian" and "latest"
@@ -253,6 +289,7 @@ public class CoreWorkload extends Workload
    */
   public static final String HOTSPOT_OPN_FRACTION = "hotspotopnfraction";
   
+  
   /**
    * Default value of the percentage operations accessing the hot set.
    */
@@ -273,6 +310,12 @@ public class CoreWorkload extends Workload
 	boolean orderedinserts;
 
 	int recordcount;
+	
+	int orgCount;
+	
+	boolean includeOrgId;
+	
+	private static final ArrayList <String> organizationIds = new ArrayList<String>();
 	
 	protected static IntegerGenerator getFieldLengthGenerator(Properties p) throws WorkloadException{
 		IntegerGenerator fieldlengthgenerator;
@@ -313,6 +356,7 @@ public class CoreWorkload extends Workload
 		double insertproportion=Double.parseDouble(p.getProperty(INSERT_PROPORTION_PROPERTY,INSERT_PROPORTION_PROPERTY_DEFAULT));
 		double scanproportion=Double.parseDouble(p.getProperty(SCAN_PROPORTION_PROPERTY,SCAN_PROPORTION_PROPERTY_DEFAULT));
 		double readmodifywriteproportion=Double.parseDouble(p.getProperty(READMODIFYWRITE_PROPORTION_PROPERTY,READMODIFYWRITE_PROPORTION_PROPERTY_DEFAULT));
+		double deleteproportion=Double.parseDouble(p.getProperty(DELETE_PROPORTION_PROPERTY,DELETE_PROPORTION_PROPERTY_DEFAULT));
 		recordcount=Integer.parseInt(p.getProperty(Client.RECORD_COUNT_PROPERTY));
 		String requestdistrib=p.getProperty(REQUEST_DISTRIBUTION_PROPERTY,REQUEST_DISTRIBUTION_PROPERTY_DEFAULT);
 		int maxscanlength=Integer.parseInt(p.getProperty(MAX_SCAN_LENGTH_PROPERTY,MAX_SCAN_LENGTH_PROPERTY_DEFAULT));
@@ -322,6 +366,13 @@ public class CoreWorkload extends Workload
 		
 		readallfields=Boolean.parseBoolean(p.getProperty(READ_ALL_FIELDS_PROPERTY,READ_ALL_FIELDS_PROPERTY_DEFAULT));
 		writeallfields=Boolean.parseBoolean(p.getProperty(WRITE_ALL_FIELDS_PROPERTY,WRITE_ALL_FIELDS_PROPERTY_DEFAULT));
+		
+		includeOrgId = new Boolean(p.getProperty(INCLUDE_ORGID_PROPERTY,INCLUDE_ORGID_DEFAULT));
+		if(includeOrgId)
+		{
+		orgCount=new Integer(p.getProperty(ORGANIZATION_COUNT_PROPERTY,ORGANIZATION_COUNT_DEFAULT));
+		initializeOrganizationIds(orgCount);
+		}
 		
 		if (p.getProperty(INSERT_ORDER_PROPERTY,INSERT_ORDER_PROPERTY_DEFAULT).compareTo("hashed")==0)
 		{
@@ -365,6 +416,10 @@ public class CoreWorkload extends Workload
 		if (readmodifywriteproportion>0)
 		{
 			operationchooser.addValue(readmodifywriteproportion,"READMODIFYWRITE");
+		}
+		
+		if (deleteproportion>0){
+			operationchooser.addValue(deleteproportion,"DELETE");
 		}
 
 		transactioninsertkeysequence=new CounterGenerator(recordcount);
@@ -425,8 +480,27 @@ public class CoreWorkload extends Workload
  		{
  			keynum=Utils.hash(keynum);
  		}
-		return "user"+keynum;
+ 		if(includeOrgId)
+ 			return selectRandomOrganizationIds(organizationIds)+"_"+keynum;
+ 		else 
+ 			return "user"+keynum;
 	}
+	
+	private static void initializeOrganizationIds(int orgCount) {
+	    String orgId = "ORG";
+	    for(int orgIndex=0;orgIndex<orgCount; orgIndex++){
+	      organizationIds.add(orgId+String.format("%09d", orgIndex));
+	    }
+	}
+	
+	private static String selectRandomOrganizationIds (ArrayList<String> organizationIds){
+	
+		Random random = new Random();
+        int index = random.nextInt(organizationIds.size());
+		return (organizationIds.get(index));
+		
+	}
+	
 	HashMap<String, ByteIterator> buildValues() {
  		HashMap<String,ByteIterator> values=new HashMap<String,ByteIterator>();
 
@@ -489,6 +563,10 @@ public class CoreWorkload extends Workload
 		else if (op.compareTo("SCAN")==0)
 		{
 			doTransactionScan(db);
+		}
+		else if (op.compareTo("DELETE")==0)
+		{
+			doTransactionDelete(db);
 		}
 		else
 		{
@@ -637,5 +715,16 @@ public class CoreWorkload extends Workload
 
 		HashMap<String, ByteIterator> values = buildValues();
 		db.insert(table,dbkey,values);
+	}
+	
+	
+	public void doTransactionDelete( DB db)
+	{
+		//choose a random key
+		int keynum = nextKeynum();
+		
+		String dbkey =buildKeyName(keynum);
+		
+		db.delete( table,dbkey);
 	}
 }
