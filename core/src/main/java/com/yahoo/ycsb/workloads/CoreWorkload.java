@@ -311,7 +311,7 @@ public class CoreWorkload extends Workload
 
 	int recordcount;
 	
-	int orgCount;
+	static int orgCount;
 	
 	boolean includeOrgId;
 	
@@ -371,7 +371,7 @@ public class CoreWorkload extends Workload
 		if(includeOrgId)
 		{
 		orgCount=new Integer(p.getProperty(ORGANIZATION_COUNT_PROPERTY,ORGANIZATION_COUNT_DEFAULT));
-		initializeOrganizationIds(orgCount);
+		initializeOrganizationIds();
 		}
 		
 		if (p.getProperty(INSERT_ORDER_PROPERTY,INSERT_ORDER_PROPERTY_DEFAULT).compareTo("hashed")==0)
@@ -481,19 +481,19 @@ public class CoreWorkload extends Workload
  			keynum=Utils.hash(keynum);
  		}
  		if(includeOrgId)
- 			return selectRandomOrganizationIds(organizationIds)+"_"+keynum;
+ 			return selectRandomOrganizationIds()+"_"+keynum;
  		else 
  			return "user"+keynum;
 	}
 	
-	private static void initializeOrganizationIds(int orgCount) {
+	private static void initializeOrganizationIds() {
 	    String orgId = "ORG";
 	    for(int orgIndex=0;orgIndex<orgCount; orgIndex++){
 	      organizationIds.add(orgId+String.format("%09d", orgIndex));
 	    }
 	}
 	
-	private static String selectRandomOrganizationIds (ArrayList<String> organizationIds){
+	private static String selectRandomOrganizationIds (){
 	
 		Random random = new Random();
         int index = random.nextInt(organizationIds.size());
